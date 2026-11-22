@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>拾光泼溅 · 记忆重建馆 — 把时光泼溅成可以走回去的空间</title>
+<meta name="description" content="上传一段视频或一张照片，以 3D Gaussian Splatting 高斯泼溅重建可漫游的三维记忆场景。">
+<link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header class="topbar">
+  <button class="brand" id="brandBtn" aria-label="回到主页">
+    <span class="brand-seal">拾</span>
+    <span>
+      <span class="brand-name">拾光泼溅</span><br>
+      <span class="brand-latin">Splat Memoriae</span>
+    </span>
+  </button>
+  <div class="topbar-right">
+    <button class="sound-btn" id="soundBtn" aria-label="环境音开关">
+      <span class="eq"><i></i><i></i><i></i></span>
+      <span id="soundLabel">AMBIENCE ON</span>
+    </button>
+    <button class="user-chip" id="userChip" hidden>
+      <span class="ava" id="userChipAva">馆</span>
+      <span id="userChipName">馆长</span>
+    </button>
+  </div>
+</header>
+
+<main>
+  <!-- ================= 主页 ================= -->
+  <section class="screen active" id="screen-home">
+    <div class="hero">
+      <div class="hero-stage" id="heroStage">
+        <canvas id="heroCanvas" aria-label="宿舍记忆高斯泼溅点云，可拖拽环视"></canvas>
+        <div class="hero-veil"></div>
+        <div class="hero-copy">
+          <div class="eyebrow">Gaussian Splatting · 记忆重建馆</div>
+          <h1>把一段时光，<br>泼溅成<em>可以走回去</em>的空间。</h1>
+          <p class="lead">上传一段视频或一张照片，高斯泼溅将像素还原为立体场景——宿舍的灯、巷口的风，都留在原地等你。</p>
+        </div>
+        <div class="hero-hud">
+          <span>SPLATS <b id="hudSplats">—</b></span>
+          <span>MODE <b id="hudMode">SPLAT</b></span>
+          <span class="hint">拖拽环视 · 滚轮 / 双指推拉</span>
+        </div>
+      </div>
+      <aside class="hero-rail" aria-label="泼溅参数控制台">
+        <h3><span>01</span> 泼溅控制台</h3>
+        <div class="ctl">
+          <div class="ctl-head"><span>重建进度</span><output id="outMorph">100%</output></div>
+          <input type="range" id="ctlMorph" min="0" max="100" value="100" aria-label="重建进度">
+        </div>
+        <div class="ctl">
+          <div class="ctl-head"><span>泼溅密度</span><output id="outDensity">50%</output></div>
+          <input type="range" id="ctlDensity" min="15" max="100" value="50" aria-label="泼溅密度">
+        </div>
+        <div class="ctl">
+          <div class="ctl-head"><span>泼溅尺寸</span><output id="outSize">1.5</output></div>
+          <input type="range" id="ctlSize" min="40" max="320" value="150" aria-label="泼溅尺寸">
+        </div>
+        <div class="ctl">
+          <div class="ctl-head"><span>环绕速度</span><output id="outSpeed">0.12</output></div>
+          <input type="range" id="ctlSpeed" min="0" max="60" value="12" aria-label="环绕速度">
+        </div>
+        <div class="ctl">
+          <div class="ctl-head"><span>景深雾</span><output id="outFog">0.55</output></div>
+          <input type="range" id="ctlFog" min="0" max="150" value="55" aria-label="景深雾强度">
+        </div>
+        <div class="field" style="margin:0">
+          <label for="ctlMode">显示模式</label>
+          <select id="ctlMode">
+            <option value="splat">高斯泼溅 · 柔光</option>
+            <option value="point">锐利点阵 · 测绘</option>
+          </select>
+        </div>
+        <label class="sw"><span>自动环绕</span><input type="checkbox" id="ctlAuto" checked><span class="track"><span class="thumb"></span></span></label>
+        <div class="field" style="margin:0">
+          <label for="ctlKnown">已知 / 推测</label>
+          <select id="ctlKnown">
+            <option value="all">全部 · 已知+推测</option>
+            <option value="known">仅已知 · 照片实测</option>
+            <option value="inferred">仅推测 · 补全层</option>
+          </select>
+        </div>
+        <label class="sw"><span>置信度着色</span><input type="checkbox" id="ctlConf"><span class="track"><span class="thumb"></span></span></label>
+        <div class="rail-actions">
+          <button class="btn ghost sm" id="heroReset">重置视角</button>
+          <button class="btn ghost sm" id="heroRandom">随机视角</button>
+          <button class="btn ice sm wide" id="heroShot">导出快照 PNG</button>
+        </div>
+      </aside>
+    </div>
+
+    <dl class="stat-strip">
+      <div class="stat panel reveal"><dt>已重建场景</dt><dd><span data-count="128">0</span><i>SCENES</i></dd></div>
+      <div class="stat panel reveal"><dt>泼溅点总量</dt><dd><span data-count="4.6" data-dec="1">0</span><i>M SPLATS</i></dd></div>
+      <div class="stat panel reveal"><dt>平均重建耗时</dt><dd><span data-count="6.7" data-dec="1">0</span><i>MIN</i></dd></div>
+      <div class="stat panel reveal"><dt>封存记忆体</dt><dd><span data-count="36">0</span><i>CAPSULES</i></dd></div>
+    </dl>
+
+    <div class="sec-head reveal">
+      <div class="eyebrow ice">02 · Reconstruct</div>
+      <h2 class="sec-title">上传你的时光素材</h2>
+      <p class="sec-sub">一段环绕拍摄的视频，或一张信息量足够的照片。浏览器端即刻预览泼溅点云；完整管线将在云端完成位姿估计与高斯训练。</p>
+    </div>
+    <div class="upload-zone reveal" id="uploadZone" role="button" tabindex="0" aria-label="上传视频或图片">
+      <span class="uz-icon"><svg viewBox="0 0 24 24"><path d="M12 16V4m0 0l-4 4m4-4l4 4M4 16v3a1 1 0 001 1h14a1 1 0 001-1v-3"/></svg></span>
+      <h3>拖入视频 / 照片，或点击选择</h3>
+      <p>建议环绕慢移拍摄 1–3 分钟，帧间重叠 ≥ 70%，光照均匀</p>
+      <div class="formats">
+        <span class="tag ice">MP4 / MOV</span><span class="tag ice">WEBM</span>
+        <span class="tag amber">JPG / PNG</span><span class="tag amber">WEBP</span>
+        <span class="tag violet">≤ 200MB</span>
+      </div>
+    </div>
+    <input type="file" id="fileInput" accept="video/*,image/*" hidden>
+    <div class="import-row reveal">
+      <button class="btn ghost" id="importBtn">导入 .splat / .ply 场景</button>
+      <p>Scaniverse / Polycam / nerfstudio 的训练产物可直接走进来：真高斯椭球（位置·尺度·旋转·颜色·透明度）原样渲染。<br>采集引导：环绕慢移 1–3 分钟、帧间重叠 ≥ 70%、避免反光与纯色墙面。</p>
+    </div>
+    <input type="file" id="splatInput" accept=".splat,.ply,.ksplat" hidden>
+
+    <div class="sec-head reveal">
+      <div class="eyebrow">03 · Pipeline</div>
+      <h2 class="sec-title">从像素到空间的四道工序</h2>
+      <p class="sec-sub">沿用时光记忆体的端侧优先思路：能在浏览器完成的绝不上云，需要 GPU 的交给重建队列。</p>
+    </div>
+    <div class="steps-grid">
+      <div class="step-card panel reveal">
+        <div class="sc-num">Ⅰ</div>
+        <h4>采集引导</h4>
+        <p>环绕慢移、避免反光与纯色墙面。手机 App（Scaniverse / Polycam / KIRI）可直接产出 splat 文件跳过训练。</p>
+        <div class="sc-tech">OVERLAP ≥ 70% · 2–4 FPS</div>
+      </div>
+      <div class="step-card panel reveal">
+        <div class="sc-num">Ⅱ</div>
+        <h4>抽帧与位姿</h4>
+        <p>ffmpeg 抽帧并过滤模糊帧，COLMAP / pycolmap 做 SfM，解算每帧相机位姿与稀疏点云。</p>
+        <div class="sc-tech">FFMPEG · COLMAP SfM</div>
+      </div>
+      <div class="step-card panel reveal">
+        <div class="sc-num">Ⅲ</div>
+        <h4>高斯训练</h4>
+        <p>3D Gaussian Splatting 优化数百万个带颜色与协方差的高斯椭球；Blender 可用于补面与精修导出。</p>
+        <div class="sc-tech">SPLATFACTO · OPENSPLAT · BRUSH</div>
+      </div>
+      <div class="step-card panel reveal">
+        <div class="sc-num">Ⅳ</div>
+        <h4>浏览器渲染</h4>
+        <p>.ply 压缩为 .splat / .ksplat 渐进加载，WebGL 泼溅渲染器在手机上也能流畅环视你的记忆。</p>
+        <div class="sc-tech">GSPLAT.JS · THREE.JS · WEBGL</div>
+      </div>
+    </div>
+    <p class="about-line reveal">拾光泼溅 · 记忆重建馆 — 沿承拾光校园时光记忆体 · MMXXVI</p>
+  </section>
+
+  <!-- ================= 示例 ================= -->
+  <section class="screen" id="screen-samples">
+    <div class="sec-head" style="margin-top:6px">
+      <div class="eyebrow ice">Gallery · 重建示例</div>
+      <h2 class="sec-title">别人留下的空间</h2>
+      <p class="sec-sub">每一例都由真实素材重建。点开任意一件，拖拽环视它的泼溅点云。</p>
+    </div>
+    <div class="filter-row">
+      <button class="chip active" data-cat="all">全部</button>
+      <button class="chip" data-cat="dorm">宿舍</button>
+      <button class="chip" data-cat="campus">校园</button>
+      <button class="chip" data-cat="city">城市</button>
+      <button class="chip" data-cat="nature">自然</button>
+      <div class="sort">
+        <span>排序</span>
+        <select id="sampleSort" aria-label="示例排序">
+          <option value="default">策展顺序</option>
+          <option value="splats">泼溅点数 ↓</option>
+          <option value="date">重建时间 ↓</option>
+        </select>
+      </div>
+    </div>
+    <div class="sample-grid" id="sampleGrid"></div>
+  </section>
+
+  <!-- ================= 个人记忆体 ================= -->
+  <section class="screen" id="screen-memory">
+    <div class="sec-head" style="margin-top:6px">
+      <div class="eyebrow">Capsules · 个人记忆体</div>
+      <h2 class="sec-title">你封存的空间</h2>
+      <p class="sec-sub">重建完成的场景在这里成为记忆体：可以重访、批注、火漆封存，也可以随时删除并撤销。</p>
+    </div>
+    <div class="login-banner" id="memLoginBanner" hidden>
+      <span class="status-dot run"></span>
+      <span>当前为本地演示存储，登录后记忆体将同步到你的云端保管柜。</span>
+      <button class="btn ice sm" id="memLoginBtn">去登录</button>
+    </div>
+    <div class="mem-toolbar">
+      <div class="mem-search">
+        <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+        <input type="search" id="memSearch" placeholder="搜索记忆体标题 / 批注…" aria-label="搜索记忆体">
+      </div>
+      <button class="btn" id="memNewBtn">＋ 新建记忆体</button>
+    </div>
+    <div class="mem-list" id="memList"></div>
+    <div class="mem-empty panel" id="memEmpty" hidden>
+      <div class="me-icon">𓂃</div>
+      <p>这里还空着。上传一段视频或照片，<br>把第一个空间泼溅出来。</p>
+      <button class="btn" id="memEmptyBtn" style="margin-top:16px">去上传素材</button>
+    </div>
+  </section>
+
+  <!-- ================= 我的 ================= -->
+  <section class="screen" id="screen-me">
+    <div class="me-wrap" id="meWrap"></div>
+    <p class="about-line">SPLAT MEMORIAE · v0.1 DESIGN PROTOTYPE · 本地演示数据</p>
+  </section>
+</main>
+
+<nav class="tabbar" aria-label="主导航">
+  <div class="tabbar-inner">
+    <button class="tab-item active" data-tab="home">
+      <svg viewBox="0 0 24 24"><path d="M3 11l9-8 9 8M5 9.5V21h5v-6h4v6h5V9.5"/></svg>
+      <span>主页</span>
+    </button>
+    <button class="tab-item" data-tab="samples">
+      <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7.5" height="7.5" rx="1.5"/><rect x="13.5" y="3" width="7.5" height="7.5" rx="1.5"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="1.5"/><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="1.5"/></svg>
+      <span>示例</span>
+    </button>
+    <button class="tab-item" data-tab="memory">
+      <svg viewBox="0 0 24 24"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9L12 3z"/><path d="M12 12l8-4.5M12 12v9M12 12L4 7.5"/></svg>
+      <span>个人记忆体</span>
+      <span class="badge" id="memBadge" hidden>1</span>
+    </button>
+    <button class="tab-item" data-tab="me">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-6.5 8-6.5s8 2.5 8 6.5"/></svg>
+      <span>我的</span>
+    </button>
+  </div>
+</nav>
+
+<!-- 重建管线覆盖层 -->
+<div class="pipeline-overlay" id="pipeOverlay" hidden>
+  <div class="pipeline-card panel">
+    <div class="eyebrow ice">Reconstructing</div>
+    <h2 id="pipeTitle">正在重建你的空间</h2>
+    <div class="psub" id="pipeSub">SOURCE —</div>
+    <div class="pipe-stages" id="pipeStages">
+      <div class="pipe-stage" data-stage="0"><span class="ps-idx">01</span><span class="ps-name">素材解码<small>DECODE &amp; INSPECT</small></span><span class="ps-state">等待</span></div>
+      <div class="pipe-stage" data-stage="1"><span class="ps-idx">02</span><span class="ps-name">抽帧与位姿估计<small>FRAMES &amp; SfM POSES</small></span><span class="ps-state">等待</span></div>
+      <div class="pipe-stage" data-stage="2"><span class="ps-idx">03</span><span class="ps-name">高斯泼溅训练<small>3DGS OPTIMIZATION</small></span><span class="ps-state">等待</span></div>
+      <div class="pipe-stage" data-stage="3"><span class="ps-idx">04</span><span class="ps-name">场景生成<small>SCENE COMPILE</small></span><span class="ps-state">等待</span></div>
+    </div>
+    <div class="pipe-bar"><span id="pipeBar"></span></div>
+    <div class="pipe-frames" id="pipeFrames"></div>
+    <div class="pipe-note" id="pipeNote">端侧预览管线 · 完整 SfM / 3DGS 训练由云端队列完成</div>
+  </div>
+</div>
+
+<!-- 泼溅查看器模态 -->
+<div class="viewer-modal" id="viewerModal" hidden>
+  <div class="vm-head">
+    <div class="vm-title">
+      <div class="eyebrow ice" style="font-size:9px">Splat Viewer</div>
+      <h2 id="vmTitle">—</h2>
+      <div class="vm-meta" id="vmMeta">—</div>
+    </div>
+    <button class="btn ghost sm" id="vmClose">关闭 <span class="kbd">ESC</span></button>
+  </div>
+  <div class="vm-body">
+    <div class="vm-stage" id="vmStage">
+      <canvas id="vmCanvas" aria-label="泼溅点云查看器"></canvas>
+      <div class="vm-hint">拖拽环视 · 滚轮 / 双指推拉 · 参数实时生效</div>
+    </div>
+    <aside class="vm-rail">
+      <h3><span>01</span> 场景数据</h3>
+      <dl class="vm-stats">
+        <div><dt>SPLATS</dt><dd id="vmSplats">—</dd></div>
+        <div><dt>SOURCE</dt><dd id="vmSource">—</dd></div>
+        <div><dt>DEVICE</dt><dd id="vmDevice">—</dd></div>
+        <div><dt>BUILT</dt><dd id="vmBuilt">—</dd></div>
+        <div><dt>KNOWN / INFERRED</dt><dd id="vmIdentity">—</dd></div>
+      </dl>
+      <h3><span>02</span> 泼溅控制台</h3>
+      <div class="ctl">
+        <div class="ctl-head"><span>重建进度</span><output id="vmOutMorph">100%</output></div>
+        <input type="range" id="vmMorph" min="0" max="100" value="100">
+      </div>
+      <div class="ctl">
+        <div class="ctl-head"><span>泼溅密度</span><output id="vmOutDensity">50%</output></div>
+        <input type="range" id="vmDensity" min="15" max="100" value="50">
+      </div>
+      <div class="ctl">
+        <div class="ctl-head"><span>泼溅尺寸</span><output id="vmOutSize">1.5</output></div>
+        <input type="range" id="vmSize" min="40" max="320" value="150">
+      </div>
+      <div class="ctl">
+        <div class="ctl-head"><span>环绕速度</span><output id="vmOutSpeed">0.12</output></div>
+        <input type="range" id="vmSpeed" min="0" max="60" value="12">
+      </div>
+      <div class="ctl">
+        <div class="ctl-head"><span>景深雾</span><output id="vmOutFog">0.55</output></div>
+        <input type="range" id="vmFog" min="0" max="150" value="55">
+      </div>
+      <div class="field" style="margin:0">
+        <label for="vmMode">显示模式</label>
+        <select id="vmMode"><option value="splat">高斯泼溅 · 柔光</option><option value="point">锐利点阵 · 测绘</option></select>
+      </div>
+      <label class="sw"><span>自动环绕</span><input type="checkbox" id="vmAuto" checked><span class="track"><span class="thumb"></span></span></label>
+      <div class="field" style="margin:0">
+        <label for="vmKnown">已知 / 推测</label>
+        <select id="vmKnown">
+          <option value="all">全部 · 已知+推测</option>
+          <option value="known">仅已知 · 实测层</option>
+          <option value="inferred">仅推测 · 补全层</option>
+        </select>
+      </div>
+      <label class="sw"><span>置信度着色</span><input type="checkbox" id="vmConf"><span class="track"><span class="thumb"></span></span></label>
+      <div class="rail-actions">
+        <button class="btn ghost sm" id="vmReset">重置视角</button>
+        <button class="btn ghost sm" id="vmRandom">随机视角</button>
+        <button class="btn ice sm wide" id="vmShot">导出快照 PNG</button>
+        <button class="btn sm wide" id="vmSave" hidden>存入个人记忆体</button>
+      </div>
+      <h3><span>03</span> 策展批注</h3>
+      <p class="vm-note" id="vmNote">—</p>
+    </aside>
+  </div>
+</div>
+
+<div class="drawer-scrim" id="drawerScrim" hidden></div>
+<aside class="drawer" id="drawer" hidden aria-label="记忆体详情"></aside>
+
+<div class="toast-wrap" id="toastWrap" aria-live="polite"></div>
+
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
